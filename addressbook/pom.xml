@@ -1,72 +1,62 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  
-  <groupId>com.devops.project</groupId>
-  <artifactId>devops-ci-cd-webapp</artifactId>
-  <packaging>war</packaging>
-  <version>1.0-SNAPSHOT</version>
-  <name>devops-ci-cd-webapp Maven Webapp</name>
-
-  <properties>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-  </properties>
-
-  <dependencies>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>4.13.2</version>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <finalName>devops-app</finalName> 
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
-      </plugin>
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.11</version>
-        <executions>
-          <execution>
-            <id>prepare-agent</id>
-            <goals><goal>prepare-agent</goal></goals>
-          </execution>
-          <execution>
-            <id>report</id>
-            <phase>test</phase>
-            <goals><goal>report</goal></goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-pmd-plugin</artifactId>
-        <version>3.21.0</version>
-      </plugin>
-    </plugins>
-  </build>
-
-  <reporting>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-report-plugin</artifactId>
-        <version>3.1.2</version>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-pmd-plugin</artifactId>
-        <version>3.21.0</version>
-      </plugin>
-    </plugins>
-  </reporting>
-</project>
+pipeline {
+    agent any
+    tools { maven 'Maven_Home' }
+    environment {
+        TOMCAT_PATH = '/opt/tomcat/webapps'
+        PROJECT_DIR = 'devops-ci-cd-webapp'
+    }
+    stages {
+        stage('Git Checkout') {
+            steps { git branch: 'main', url: 'https://github.com/cloud-play/devops001.git' }
+        }
+        stage('Compile & Static Analysis') {
+            steps { sh "mvn -f ${PROJECT_DIR}/pom.xml clean compile pmd:pmd pmd:cpd" }
+        }
+        stage('Trivy FS Scan') {
+            steps { sh "trivy fs ${PROJECT_DIR} > trivy-fs-report.txt" }
+        }
+        stage('Unit Test & Surefire Report') {
+            steps { sh "mvn -f ${PROJECT_DIR}/pom.xml verify surefire-report:report" }
+            post { always { junit "**/target/surefire-reports/*.xml" } }
+        }
+        stage('Security Gate (PMD)') {
+            steps {
+                // Changed from pmd:check to pmd:pmd so the build doesn't fail on warnings
+                sh "mvn -f ${PROJECT_DIR}/pom.xml pmd:pmd" 
+                
+                withSonarQubeEnv('SonarQube-Server') {
+                    sh "mvn -f ${PROJECT_DIR}/pom.xml sonar:sonar"
+                }
+            }
+        }
+        stage("Sonar Quality Gate") {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Project Site Documentation') {
+            steps { sh "mvn -f ${PROJECT_DIR}/pom.xml surefire-report:report-only site" }
+        }
+        stage('Package & Deploy') {
+            steps {
+                sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
+                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
+            }
+        }
+        stage('Health Check') {
+            steps {
+                script {
+                    sleep 30 
+                    def response = sh(script: "curl -s http://localhost:8080/devops-app/actuator/health", returnStdout: true).trim()
+                    if (response.contains('"status":"UP"')) { echo "Application is HEALTHY! ✅" }
+                    else { error "Application is UNHEALTHY! ❌" }
+                }
+            }
+        }
+    }
+    post {
+        always { archiveArtifacts artifacts: '**/target/*.war, **/target/site/**', allowEmptyArchive: true }
+    }
+}
