@@ -2,72 +2,101 @@ pipeline {
     agent any
 
     tools {
-        // Matches the name in your Jenkins Global Tool Configuration
         maven 'Maven_Home' 
+    }
+
+    environment {
+        TOMCAT_PATH = '/opt/tomcat/webapps'
+        PROJECT_DIR = 'devops-ci-cd-webapp'
     }
 
     stages {
         stage('Git Checkout') {
             steps {
-                // IMPORTANT: Ensure this URL matches your public repo
-                git 'https://github.com/cloud-play/Agency-Catlog.git'
+                git branch: 'main', url: 'https://github.com/cloud-play/devops001.git'
             }
         }
 
-        stage('Build & Unit Test') {
+        stage('Compile & PMD') {
             steps {
-                echo 'Building and running tests...'
-                // clean install triggers the 'test' phase and JaCoCo 'prepare-agent'
-                sh 'mvn clean install'
+                sh "mvn -f ${PROJECT_DIR}/pom.xml clean compile pmd:pmd"
             }
         }
 
-        stage('Code Coverage (JaCoCo)') {
+        stage('Trivy FS Scan') {
             steps {
-                echo 'Generating Code Coverage Report...'
-                // Generates the coverage data for Jenkins/Sonar
-                sh 'mvn jacoco:report'
+                sh "trivy fs ${PROJECT_DIR} > trivy-fs-report.txt"
+                sh 'cat trivy-fs-report.txt'
             }
         }
 
-        stage('Static Code Analysis (PMD)') {
+        stage('Unit Test & Coverage') {
             steps {
-                echo 'Running PMD Analysis...'
-                // Generates PMD and CPD reports
-                sh 'mvn pmd:pmd pmd:cpd'
+                sh "mvn -f ${PROJECT_DIR}/pom.xml verify"
+            }
+            post {
+                always {
+                    junit "**/target/surefire-reports/*.xml"
+                }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                echo 'Pushing metrics to SonarQube...'
-                // Useful for future training when you connect a Sonar server
-                // sh 'mvn sonar:sonar' 
-                echo 'Skipping actual scan until Sonar server is configured.'
+                withSonarQubeEnv('SonarQube-Server') {
+                    sh "mvn -f ${PROJECT_DIR}/pom.xml sonar:sonar"
+                }
             }
         }
 
-        stage('Reports & Site Generation') {
+        stage("Quality Gate") {
             steps {
-                echo 'Generating Surefire and Project Site...'
-                sh 'mvn surefire-report:report-only site'
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                // Using sudo as Jenkins user often lacks write access to /opt
+                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    echo "Waiting 30s for Tomcat to deploy..."
+                    sleep 30 
+                    
+                    // Note: URL includes the war name 'devops-app' as the context
+                    def response = sh(script: "curl -s http://localhost:8080/devops-app/actuator/health", returnStdout: true).trim()
+                    
+                    echo "Response from App: ${response}"
+                    
+                    if (response.contains('"status":"UP"')) {
+                        echo "Application is HEALTHY! ✅"
+                    } else {
+                        error "Application is UNHEALTHY! ❌"
+                    }
+                }
             }
         }
     }
 
     post {
-        always {
-            // Archives the WAR file and all HTML reports for students to see
-            archiveArtifacts artifacts: 'target/*.war, target/site/**, target/site/jacoco/**', allowEmptyArchive: true
-            
-            // Displays test results in the Jenkins "Test Result Trend" graph
-            junit '**/target/surefire-reports/*.xml'
-        }
         success {
-            echo 'Pipeline completed successfully!'
+            echo "Successfully completed build for Kubebytes DevOps Project!"
         }
         failure {
-            echo 'Pipeline failed. Check the Console Output for Maven or Git errors.'
+            echo "Pipeline failed. Check logs for specific errors."
         }
     }
 }
