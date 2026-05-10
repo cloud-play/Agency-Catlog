@@ -2,9 +2,8 @@ pipeline {
     agent any
 
     tools {
-        // Must match the name of the Maven installation in Jenkins Global Tool Configuration
-        maven 'Maven3'
-    }
+    maven 'Maven_Home' // Changed from 'Maven3' to 'Maven_Home'
+}
 
     stages {
         stage('Git Checkout') {
