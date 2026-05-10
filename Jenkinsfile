@@ -17,22 +17,25 @@ pipeline {
             }
         }
 
-        stage('Compile & PMD') {
+        stage('Compile & PMD Analysis') {
             steps {
-                sh "mvn -f ${PROJECT_DIR}/pom.xml clean compile pmd:pmd"
+                echo 'Running PMD and CPD...'
+                // Running PMD and Copy-Paste Detector as requested
+                sh "mvn -f ${PROJECT_DIR}/pom.xml clean compile pmd:pmd pmd:cpd"
             }
         }
 
         stage('Trivy FS Scan') {
             steps {
                 sh "trivy fs ${PROJECT_DIR} > trivy-fs-report.txt"
-                sh 'cat trivy-fs-report.txt'
             }
         }
 
-        stage('Unit Test & Coverage') {
+        stage('Unit Test & Surefire Report') {
             steps {
-                sh "mvn -f ${PROJECT_DIR}/pom.xml verify"
+                echo 'Generating Surefire Reports...'
+                // Runs tests and creates the HTML report
+                sh "mvn -f ${PROJECT_DIR}/pom.xml verify surefire-report:report"
             }
             post {
                 always {
@@ -41,8 +44,11 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Security & Code Quality') {
             steps {
+                // pmd:check will fail the build if code quality is too low
+                sh "mvn -f ${PROJECT_DIR}/pom.xml pmd:check"
+                
                 withSonarQubeEnv('SonarQube-Server') {
                     sh "mvn -f ${PROJECT_DIR}/pom.xml sonar:sonar"
                 }
@@ -57,15 +63,17 @@ pipeline {
             }
         }
 
-        stage('Package') {
+        stage('Generate Project Site') {
             steps {
-                sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
+                echo 'Building full Maven Site documentation...'
+                // Aggregates all reports (PMD, Surefire, etc) into one HTML site
+                sh "mvn -f ${PROJECT_DIR}/pom.xml surefire-report:report-only site"
             }
         }
 
-        stage('Deploy to Tomcat') {
+        stage('Package & Deploy') {
             steps {
-                // Using sudo as Jenkins user often lacks write access to /opt
+                sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
                 sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
             }
         }
@@ -73,14 +81,9 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "Waiting 30s for Tomcat to deploy..."
+                    echo "Waiting 30s for Tomcat..."
                     sleep 30 
-                    
-                    // Note: URL includes the war name 'devops-app' as the context
                     def response = sh(script: "curl -s http://localhost:8080/devops-app/actuator/health", returnStdout: true).trim()
-                    
-                    echo "Response from App: ${response}"
-                    
                     if (response.contains('"status":"UP"')) {
                         echo "Application is HEALTHY! ✅"
                     } else {
@@ -92,11 +95,12 @@ pipeline {
     }
 
     post {
+        always {
+            // Archive everything so students can view reports in Jenkins
+            archiveArtifacts artifacts: '**/target/*.war, **/target/site/**', allowEmptyArchive: true
+        }
         success {
             echo "Successfully completed build for Kubebytes DevOps Project!"
-        }
-        failure {
-            echo "Pipeline failed. Check logs for specific errors."
         }
     }
 }
