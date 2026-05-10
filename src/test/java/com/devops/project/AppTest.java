@@ -1,0 +1,1 @@
+package com.devops.project; import org.junit.Test; import static org.junit.Assert.*; public class AppTest { @Test public void testStatus() { App myApp = new App(); assertEquals("DevOps is Awesome", myApp.getStatus()); } }
