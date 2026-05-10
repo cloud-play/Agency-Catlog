@@ -2,71 +2,72 @@ pipeline {
     agent any
 
     tools {
-    maven 'Maven_Home' // Changed from 'Maven3' to 'Maven_Home'
-}
+        // Matches the name in your Jenkins Global Tool Configuration
+        maven 'Maven_Home' 
+    }
 
     stages {
         stage('Git Checkout') {
             steps {
-                // Pulling your code from the repository
-                git 'https://github.com/your-username/your-repo.git'
+                // IMPORTANT: Ensure this URL matches your public repo
+                git 'https://github.com/cloud-play/Agency-Catlog.git'
             }
         }
 
         stage('Build & Unit Test') {
             steps {
                 echo 'Building and running tests...'
-                // Clean and compile the code while running unit tests
+                // clean install triggers the 'test' phase and JaCoCo 'prepare-agent'
                 sh 'mvn clean install'
+            }
+        }
+
+        stage('Code Coverage (JaCoCo)') {
+            steps {
+                echo 'Generating Code Coverage Report...'
+                // Generates the coverage data for Jenkins/Sonar
+                sh 'mvn jacoco:report'
             }
         }
 
         stage('Static Code Analysis (PMD)') {
             steps {
-                echo 'Running PMD to check for code smells...'
-                // Generates the pmd.xml and pmd.html reports
-                // 'mvn pmd:check' could be used here to fail the build on violations
-                sh 'mvn pmd:pmd'
+                echo 'Running PMD Analysis...'
+                // Generates PMD and CPD reports
+                sh 'mvn pmd:pmd pmd:cpd'
             }
         }
 
-        stage('Check for Duplicate Code (CPD)') {
+        stage('SonarQube Analysis') {
             steps {
-                echo 'Running Copy-Paste Detector...'
-                sh 'mvn pmd:cpd'
+                echo 'Pushing metrics to SonarQube...'
+                // Useful for future training when you connect a Sonar server
+                // sh 'mvn sonar:sonar' 
+                echo 'Skipping actual scan until Sonar server is configured.'
             }
         }
 
-        stage('Generate Surefire Report') {
+        stage('Reports & Site Generation') {
             steps {
-                echo 'Generating Surefire Test Reports...'
-                // Generates the HTML version of test results
-                sh 'mvn surefire-report:report-only'
-            }
-        }
-
-        stage('Project Documentation (Site)') {
-            steps {
-                echo 'Generating full project documentation site...'
-                // Combines all reports (PMD, Surefire, etc.) into one site
-                sh 'mvn site'
+                echo 'Generating Surefire and Project Site...'
+                sh 'mvn surefire-report:report-only site'
             }
         }
     }
 
     post {
         always {
-            // Archive the artifacts so you can view them in the Jenkins UI
-            archiveArtifacts artifacts: 'target/*.war, target/site/**', allowEmptyArchive: true
+            // Archives the WAR file and all HTML reports for students to see
+            archiveArtifacts artifacts: 'target/*.war, target/site/**, target/site/jacoco/**', allowEmptyArchive: true
             
-            // This publishes the reports directly to the Jenkins project page
+            // Displays test results in the Jenkins "Test Result Trend" graph
             junit '**/target/surefire-reports/*.xml'
         }
         success {
             echo 'Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed. Please check the logs and PMD/Surefire reports.'
+            echo 'Pipeline failed. Check the Console Output for Maven or Git errors.'
         }
     }
 }
