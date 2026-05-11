@@ -26,16 +26,20 @@ pipeline {
         }
 
         stage('Deploy to Tomcat') {
-            steps {
-                echo 'Deploying to Tomcat...'
-                // 1. Delete old files to ensure fresh output
-                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
-                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
-                
-                // 2. Copy the fresh war
-                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
-            }
+    steps {
+        script {
+            // This will print the contents of the target folder so you can see if the .war exists
+            sh "ls -l ${WORKSPACE}/${PROJECT_DIR}/target/"
+            
+            echo 'Attempting to delete old files...'
+            sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
+            sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
+            
+            echo 'Copying new war...'
+            sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
         }
+    }
+}
 
         stage('Trivy FS Scan') {
             steps {
