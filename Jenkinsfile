@@ -71,18 +71,19 @@ pipeline {
             }
         }
 
-        stage('Package & Deploy') {
+    stage('Package & Deploy') {
     steps {
-        // Build the new package
-        sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
+        // 1. Build the new war file
+        // Adding 'clean' here ensures Maven doesn't reuse old local build artifacts
+        sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
         
-        // 1. Remove the old .war AND the expanded folder
-        // 2. Copy the new .war
-        sh """
-            sudo rm -rf ${TOMCAT_PATH}/devops-app.war
-            sudo rm -rf ${TOMCAT_PATH}/devops-app
-            sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war
-        """
+        // 2. Clear the Tomcat deployment area
+        // We use -f to ignore errors if the file doesn't exist yet
+        sh "sudo rm -rf ${TOMCAT_PATH}/webapps/devops-app.war"
+        sh "sudo rm -rf ${TOMCAT_PATH}/webapps/devops-app"
+        
+        // 3. Copy the new war file
+        sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/webapps/devops-app.war"
     }
 }
 
