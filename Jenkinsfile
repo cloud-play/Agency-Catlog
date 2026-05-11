@@ -27,16 +27,20 @@ pipeline {
         }
 
         stage('Deploy to Tomcat') {
-            steps {
-                echo 'Wiping old deployment and copying new Travel Site...'
-                // 1. Force Tomcat to forget the old 'Hello World' app
-                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
-                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
-                
-                // 2. Deploy the fresh Travel Agency WAR
-                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
-            }
-        }
+    steps {
+        echo 'Wiping old deployment and Tomcat work cache...'
+        // 1. Remove the app and the war
+        sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
+        sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
+        
+        // 2. Clear the compiled JSP cache (This is the "Work" folder)
+        // Adjust the path if your tomcat is not in /opt/tomcat
+        sh "sudo rm -rf /opt/tomcat/work/Catalina/localhost/devops-app"
+        
+        // 3. Copy the fresh war
+        sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
+    }
+}
 
         stage('Trivy FS Scan') {
             steps {
