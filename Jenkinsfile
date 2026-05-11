@@ -6,6 +6,7 @@ pipeline {
     }
 
     environment {
+        // Ensure these paths match your server exactly
         TOMCAT_PATH = '/opt/tomcat/webapps'
         PROJECT_DIR = 'devops-ci-cd-webapp'
     }
@@ -19,32 +20,27 @@ pipeline {
 
         stage('Compile & Package') {
             steps {
-                echo 'Generating WAR file...'
-                // Use 'package' instead of 'compile' so the .war file is actually created
+                echo 'Cleaning old builds and packaging the new WAR...'
+                // 'clean' is the secret to getting rid of the "Hello World" build
                 sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
             }
         }
 
         stage('Deploy to Tomcat') {
-    steps {
-        script {
-            // This will print the contents of the target folder so you can see if the .war exists
-            sh "ls -l ${WORKSPACE}/${PROJECT_DIR}/target/"
-            
-            echo 'Attempting to delete old files...'
-            sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
-            sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
-            
-            echo 'Copying new war...'
-            sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
+            steps {
+                echo 'Wiping old deployment and copying new Travel Site...'
+                // 1. Force Tomcat to forget the old 'Hello World' app
+                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
+                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
+                
+                // 2. Deploy the fresh Travel Agency WAR
+                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
+            }
         }
-    }
-}
 
         stage('Trivy FS Scan') {
             steps {
                 sh "trivy fs ${PROJECT_DIR} > trivy-fs-report.txt"
-                sh 'cat trivy-fs-report.txt'
             }
         }
 
@@ -84,13 +80,14 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "Waiting for Tomcat to extract the app..."
+                    echo "Waiting 20s for Tomcat to expand the new Travel Site..."
                     sleep 20
-                    def response = sh(script: "curl -s http://localhost:8080/devops-app/actuator/health", returnStdout: true).trim()
-                    if (response.contains('"status":"UP"')) {
-                        echo "Application is HEALTHY! ✅"
+                    // Note: If you use Tomcat 9/10, ensure the health endpoint is correct
+                    def response = sh(script: "curl -s http://localhost:8080/devops-app/", returnStdout: true).trim()
+                    if (response.contains('KubeBytes Travel')) {
+                        echo "Deployment Successful! Travel Agency is LIVE. ✅"
                     } else {
-                        error "Application is UNHEALTHY! ❌"
+                        error "Deployment failed or still showing old page! ❌"
                     }
                 }
             }
