@@ -6,9 +6,9 @@ pipeline {
     }
 
     environment {
-        // Ensure these paths match your server exactly
         TOMCAT_PATH = '/opt/tomcat/webapps'
-        PROJECT_DIR = 'devops-ci-cd-webapp'
+        // FIX: According to your screenshot, your pom.xml and src are inside 'addressbook'
+        PROJECT_DIR = 'addressbook' 
     }
 
     stages {
@@ -20,27 +20,31 @@ pipeline {
 
         stage('Compile & Package') {
             steps {
-                echo 'Cleaning old builds and packaging the new WAR...'
-                // 'clean' is the secret to getting rid of the "Hello World" build
+                echo 'Building the Travel Agency WAR file...'
+                // Running maven inside the folder where pom.xml actually lives
                 sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
             }
         }
 
         stage('Deploy to Tomcat') {
-    steps {
-        echo 'Wiping old deployment and Tomcat work cache...'
-        // 1. Remove the app and the war
-        sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
-        sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
-        
-        // 2. Clear the compiled JSP cache (This is the "Work" folder)
-        // Adjust the path if your tomcat is not in /opt/tomcat
-        sh "sudo rm -rf /opt/tomcat/work/Catalina/localhost/devops-app"
-        
-        // 3. Copy the fresh war
-        sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
-    }
-}
+            steps {
+                echo 'Performing Deep Clean and Deploying...'
+                sh """
+                    # 1. Delete old war and expanded folder
+                    sudo rm -rf ${TOMCAT_PATH}/devops-app.war
+                    sudo rm -rf ${TOMCAT_PATH}/devops-app
+                    
+                    # 2. Delete Tomcat Work/Cache directory to stop it from remembering "Hello World"
+                    sudo rm -rf /opt/tomcat/work/Catalina/localhost/devops-app
+                    
+                    # 3. Copy the fresh war from the correct target folder
+                    sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war
+                    
+                    # 4. Ensure permissions are correct
+                    sudo chown testuser:testuser ${TOMCAT_PATH}/devops-app.war
+                """
+            }
+        }
 
         stage('Trivy FS Scan') {
             steps {
@@ -84,14 +88,14 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "Waiting 20s for Tomcat to expand the new Travel Site..."
+                    echo "Waiting 20s for deployment..."
                     sleep 20
-                    // Note: If you use Tomcat 9/10, ensure the health endpoint is correct
+                    // Checking for your Travel Agency title in the HTML
                     def response = sh(script: "curl -s http://localhost:8080/devops-app/", returnStdout: true).trim()
                     if (response.contains('KubeBytes Travel')) {
-                        echo "Deployment Successful! Travel Agency is LIVE. ✅"
+                        echo "SUCCESS: Travel Agency Site is LIVE! ✅"
                     } else {
-                        error "Deployment failed or still showing old page! ❌"
+                        error "FAILURE: Still showing old content or page not found! ❌"
                     }
                 }
             }
