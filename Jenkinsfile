@@ -13,16 +13,27 @@ pipeline {
     stages {
         stage('Git Checkout') {
             steps {
-                // Pulling your code from the repository
                 git branch: 'main', url: 'https://github.com/cloud-play/devops001.git'
             }
         }
 
-        stage('Compile & Static Analysis') {
+        stage('Compile & Package') {
             steps {
-                echo 'Running PMD and CPD analysis...'
-                // Generates reports for PMD and Duplicate Code (CPD)
-                sh "mvn -f ${PROJECT_DIR}/pom.xml clean compile pmd:pmd pmd:cpd"
+                echo 'Generating WAR file...'
+                // Use 'package' instead of 'compile' so the .war file is actually created
+                sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                echo 'Deploying to Tomcat...'
+                // 1. Delete old files to ensure fresh output
+                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
+                sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
+                
+                // 2. Copy the fresh war
+                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
             }
         }
 
@@ -35,9 +46,7 @@ pipeline {
 
         stage('Unit Test & Surefire') {
             steps {
-                echo 'Running Unit Tests and generating Surefire reports...'
-                // Generates surefire-report:report as requested
-                sh "mvn -f ${PROJECT_DIR}/pom.xml verify surefire-report:report"
+                sh "mvn -f ${PROJECT_DIR}/pom.xml surefire-report:report"
             }
             post {
                 always {
@@ -56,7 +65,6 @@ pipeline {
 
         stage("Sonar Quality Gate") {
             steps {
-                // Reduced timeout for training purposes to avoid 1-hour hangs
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
@@ -65,32 +73,14 @@ pipeline {
 
         stage('Project Documentation (Site)') {
             steps {
-                echo 'Generating full project documentation site...'
-                // Combines all reports into one site as requested
-                sh "mvn -f ${PROJECT_DIR}/pom.xml surefire-report:report-only site"
+                sh "mvn -f ${PROJECT_DIR}/pom.xml site"
             }
         }
-
-    stage('Package & Deploy') {
-    steps {
-        // 1. Build the new war file
-        // Adding 'clean' here ensures Maven doesn't reuse old local build artifacts
-        sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
-        
-        // 2. Clear the Tomcat deployment area
-        // We use -f to ignore errors if the file doesn't exist yet
-        sh "sudo rm -rf ${TOMCAT_PATH}/webapps/devops-app.war"
-        sh "sudo rm -rf ${TOMCAT_PATH}/webapps/devops-app"
-        
-        // 3. Copy the new war file
-        sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/webapps/devops-app.war"
-    }
-}
 
         stage('Health Check') {
             steps {
                 script {
-                    echo "Waiting for deployment..."
+                    echo "Waiting for Tomcat to extract the app..."
                     sleep 20
                     def response = sh(script: "curl -s http://localhost:8080/devops-app/actuator/health", returnStdout: true).trim()
                     if (response.contains('"status":"UP"')) {
@@ -105,7 +95,6 @@ pipeline {
 
     post {
         always {
-            // Archive all generated reports (PMD, CPD, Surefire, Site)
             archiveArtifacts artifacts: '**/target/*.war, **/target/site/**', allowEmptyArchive: true
         }
     }
