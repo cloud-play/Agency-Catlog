@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         TOMCAT_PATH = '/opt/tomcat/webapps'
-        // CRITICAL: Point to 'addressbook' so Maven builds your Travel Site, not the root template
+        // FIX: Points to 'addressbook' where your real Travel Site code lives
         PROJECT_DIR = 'addressbook' 
     }
 
@@ -21,7 +21,7 @@ pipeline {
         stage('Compile & Package') {
             steps {
                 echo 'Generating WAR file from addressbook directory...'
-                // Using -f ensures Maven uses the pom.xml inside addressbook
+                // Using -f ensures Maven uses the correct Travel Agency pom.xml
                 sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
             }
         }
@@ -29,7 +29,7 @@ pipeline {
         stage('Deploy to Tomcat') {
             steps {
                 echo 'Deploying to Tomcat and clearing internal caches...'
-                // 1. Delete old files and Tomcat's internal JSP cache folder
+                // 1. Delete old files and Tomcat's internal JSP cache folder (the "work" directory)
                 sh "sudo rm -rf ${TOMCAT_PATH}/devops-app.war"
                 sh "sudo rm -rf ${TOMCAT_PATH}/devops-app"
                 sh "sudo rm -rf /opt/tomcat/work/Catalina/localhost/devops-app"
@@ -37,7 +37,7 @@ pipeline {
                 // 2. Copy the fresh war from the addressbook target folder
                 sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
                 
-                // 3. Fix ownership (Matches your manual fix)
+                // 3. Fix ownership so Tomcat can read the new site
                 sh "sudo chown testuser:testuser ${TOMCAT_PATH}/devops-app.war"
             }
         }
@@ -87,12 +87,12 @@ pipeline {
                 script {
                     echo "Waiting for Tomcat to extract the app..."
                     sleep 20
-                    // Checking for your Travel Site title in the page source
+                    // Explicitly checking for "KubeBytes Travel" in the HTML source
                     def response = sh(script: "curl -s http://localhost:8080/devops-app/", returnStdout: true).trim()
                     if (response.contains('KubeBytes Travel')) {
                         echo "Application is HEALTHY and Live! ✅"
                     } else {
-                        error "Application is still showing old content! ❌"
+                        error "Application is still showing old content or Hello World! ❌"
                     }
                 }
             }
@@ -103,6 +103,7 @@ pipeline {
     post {
         always {
             echo 'Archiving build artifacts and reports...'
+            // This captures the WAR, the site docs, and the Trivy report
             archiveArtifacts artifacts: '**/target/*.war, **/target/site/**, trivy-fs-report.txt', allowEmptyArchive: true
         }
         success {
