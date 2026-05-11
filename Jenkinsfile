@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         TOMCAT_PATH = '/opt/tomcat/webapps'
-        // CRITICAL: Pointing to the subdirectory containing your Travel site code
+        // This targets the specific folder containing your travel site code
         PROJECT_DIR = 'addressbook' 
     }
 
@@ -20,8 +20,8 @@ pipeline {
 
         stage('Compile & Package') {
             steps {
-                echo 'Generating WAR file from addressbook directory...'
-                // Using -f ensures Maven uses the pom.xml inside the addressbook folder
+                echo 'Building from addressbook directory...'
+                // Using -f ensures Maven uses the correct Travel Agency pom.xml
                 sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
             }
         }
@@ -99,10 +99,11 @@ pipeline {
         }
     }
 
+    // --- Declarative Post Build Actions ---
     post {
         always {
             echo 'Archiving build artifacts and reports...'
-            // Captures the WAR and reports regardless of build success/failure
+            // This captures the WAR and reports regardless of build success/failure
             archiveArtifacts artifacts: '**/target/*.war, **/target/site/**, trivy-fs-report.txt', allowEmptyArchive: true
         }
         success {
