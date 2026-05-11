@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         TOMCAT_PATH = '/opt/tomcat/webapps'
-        // Your code and pom.xml are inside this subdirectory
+        // This targets the specific folder containing your travel site code
         PROJECT_DIR = 'addressbook' 
     }
 
@@ -21,7 +21,7 @@ pipeline {
         stage('Compile & Package') {
             steps {
                 echo 'Building Travel Agency WAR...'
-                // Use -f to point to the pom.xml inside the addressbook folder
+                // Using -f ensures Maven looks inside the addressbook folder
                 sh "mvn -f ${PROJECT_DIR}/pom.xml clean package -DskipTests"
             }
         }
@@ -34,7 +34,7 @@ pipeline {
                     sudo rm -rf ${TOMCAT_PATH}/devops-app
                     sudo rm -rf /opt/tomcat/work/Catalina/localhost/devops-app
                     
-                    # Copying the specific war built from the addressbook folder
+                    # Copy the newly built war from the addressbook target folder
                     sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war
                     sudo chown testuser:testuser ${TOMCAT_PATH}/devops-app.war
                 """
@@ -67,6 +67,22 @@ pipeline {
                     }
                 }
             }
+        }
+    }
+
+    // --- Declarative Post-Build Actions ---
+    post {
+        always {
+            echo 'Cleaning up workspace and archiving artifacts...'
+            // Archive the WAR and the Trivy report regardless of build status
+            archiveArtifacts artifacts: "${PROJECT_DIR}/target/*.war, trivy-fs-report.txt", allowEmptyArchive: true
+        }
+        success {
+            echo 'Pipeline completed successfully! Sending notification...'
+            // Add email or Slack notifications here if configured
+        }
+        failure {
+            echo 'Pipeline failed. Please check the logs for errors in the red stages.'
         }
     }
 }
