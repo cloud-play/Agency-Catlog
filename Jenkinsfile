@@ -11,7 +11,7 @@ pipeline {
     }
 
     stages {
-        stage('Git Checkout') {
+        stage('Git Checkout ') {
             steps {
                 git branch: 'main', url: 'https://github.com/cloud-play/devops001.git'
             }
