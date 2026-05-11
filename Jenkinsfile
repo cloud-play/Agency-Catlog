@@ -72,12 +72,19 @@ pipeline {
         }
 
         stage('Package & Deploy') {
-            steps {
-                sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
-                // Deploying to local Tomcat
-                sh "sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war"
-            }
-        }
+    steps {
+        // Build the new package
+        sh "mvn -f ${PROJECT_DIR}/pom.xml package -DskipTests"
+        
+        // 1. Remove the old .war AND the expanded folder
+        // 2. Copy the new .war
+        sh """
+            sudo rm -rf ${TOMCAT_PATH}/devops-app.war
+            sudo rm -rf ${TOMCAT_PATH}/devops-app
+            sudo cp ${WORKSPACE}/${PROJECT_DIR}/target/*.war ${TOMCAT_PATH}/devops-app.war
+        """
+    }
+}
 
         stage('Health Check') {
             steps {
